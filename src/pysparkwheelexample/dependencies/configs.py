@@ -1,0 +1,3 @@
+config = {
+  "steps_per_floor": 21
+}
