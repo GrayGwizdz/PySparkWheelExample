@@ -1,12 +1,15 @@
 from glob import glob
 from os.path import basename
 from os.path import splitext
+import os
 
 from setuptools import setup
 from setuptools import find_packages
 
 with open("README.md", "r") as fh:
     long_description = fh.read()
+
+version = os.environ.get("package_version", "0.0.1")
 
 setup(
     name="pysparkwheelexample", # Replace with your own username
