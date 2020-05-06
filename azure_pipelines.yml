@@ -123,9 +123,9 @@ stages:
               sh build.sh
             env:
               package_version: $(LIB_VERSION).$(Build.BuildId)
-            workingDirectory: $(WORKING_DIR)
             displayName: Build wheel artifact
-          - publish: $(WORKING_DIR)/dist
+
+          - publish: dist
             artifact: drop
             displayName: Publish Build Artifact
 
