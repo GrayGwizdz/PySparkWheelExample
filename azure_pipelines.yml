@@ -30,12 +30,8 @@ stages:
             displayName: Add conda to PATH
             workingDirectory: $(WORKING_DIR)
 
-          - bash: |
-              ls -l
-              pwd
-              conda env create --quiet --file conda.yaml
+          - bash: conda env create --quiet --file conda.yaml
             displayName: Create Anaconda environment
-            workingDirectory: $(WORKING_DIR)
 
           - task: PipAuthenticate@1
             displayName: 'Pip Authenticate'
@@ -79,7 +75,6 @@ stages:
               source activate pysparkwheelexample
               sh test.sh
             displayName: "Running unit tests and coverage"
-            workingDirectory: $(WORKING_DIR)
 
           - bash: |
               source activate pysparkwheelexample
@@ -114,11 +109,8 @@ stages:
             workingDirectory: $(WORKING_DIR)
 
           - bash: |
-              ls -l
-              pwd
               conda env create --quiet --file conda.yaml
             displayName: Create Anaconda environment
-            workingDirectory: $(WORKING_DIR)
 
           - task: PipAuthenticate@1
             displayName: 'Pip Authenticate'
