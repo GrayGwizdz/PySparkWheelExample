@@ -1,0 +1,170 @@
+trigger:
+  branches:
+    include:
+      - master
+  paths:
+    include:
+      - src/pysparkwheelexample
+
+pool:
+  name: Hosted Ubuntu 1604
+  vmImage: "Ubuntu-16.04"
+
+variables:
+  WORKING_DIR: src/pysparkwheelexample
+  LIB_VERSION: 0.0.1
+
+stages:
+  - stage: TestPackage
+    displayName: Test Package
+    variables:
+      - group: vg-build
+    jobs:
+      - job: Test
+        pool:
+          name: Hosted Ubuntu 1604
+          vmImage: "Ubuntu-16.04"
+        continueOnError: false
+        steps:
+          - bash: echo "##vso[task.prependpath]$CONDA/bin"
+            displayName: Add conda to PATH
+            workingDirectory: $(WORKING_DIR)
+
+          - bash: |
+              ls -l
+              pwd
+              conda env create --quiet --file conda.yaml
+            displayName: Create Anaconda environment
+            workingDirectory: $(WORKING_DIR)
+
+          - task: PipAuthenticate@1
+            displayName: 'Pip Authenticate'
+            inputs:
+              artifactFeeds: $(ARTIFACT-FEED)
+              onlyAddExtraIndex: true
+
+          - bash: |
+              source activate pysparkwheelexample
+              pip uninstall -y pyspark
+              pip install -U databricks-connect==6.4 databricks-cli==0.10.0
+              echo "$(WORKSPACE-REGION-URL)
+              $(WORKSPACE-USER-PAT)" | databricks configure --token
+            condition: and(succeeded(), eq(variables['USE-DATABRICKS-CONNECT'], 'True'))
+            workingDirectory: $(WORKING_DIR)
+            displayName: 'Configure Databricks CLI'
+
+          - bash: |
+              source activate pysparkwheelexample
+              TEMP_CLUSTER_ID=$(databricks clusters create --json '{"cluster_name":"unit-testing-$(Build.BuildId)","spark_version":"$(DBX-SPARK-VERSION)","node_type_id":"$(DBX-NODE-TYPE)","spark_conf":{"fs.azure.account.auth.type":"OAuth","spark.hadoop.fs.azure.account.oauth2.client.endpoint":"https://login.microsoftonline.com/5f9dc6bd-f38a-454a-864c-c803691193c5/oauth2/token","spark.hadoop.fs.azure.account.auth.type":"OAuth","spark.hadoop.fs.azure.account.oauth.provider.type":"org.apache.hadoop.fs.azurebfs.oauth2.ClientCredsTokenProvider","spark.databricks.delta.preview.enabled":"true","spark.hadoop.fs.azure.account.oauth2.client.id":"$(DBX-OAUTH-CLIENTID)","fs.azure.account.oauth2.client.endpoint":"https://login.microsoftonline.com/5f9dc6bd-f38a-454a-864c-c803691193c5/oauth2/token","fs.azure.account.oauth.provider.type":"org.apache.hadoop.fs.azurebfs.oauth2.ClientCredsTokenProvider","fs.azure.account.oauth2.client.id":"$(DBX-OAUTH-CLIENTID)"},"num_workers":"$(DBX-NUM-WORKERS)"}' | python -c "import sys, json; print(json.load(sys.stdin)['cluster_id'])")
+              echo "##vso[task.setvariable variable=cluster_id]$TEMP_CLUSTER_ID"
+              echo $TEMP_CLUSTER_ID
+            condition: and(succeeded(), eq(variables['USE-DATABRICKS-CONNECT'], 'True'))
+            workingDirectory: $(WORKING_DIR)
+            displayName: 'Create Databricks Cluster'
+
+          - bash: |
+              source activate pysparkwheelexample
+              echo "Cluster ID: $CLUSTER_ID"
+              echo "y
+              $(WORKSPACE-REGION-URL)
+              $(WORKSPACE-USER-PAT)
+              $(CLUSTER_ID)
+              $(WORKSPACE-ORG-ID)
+              15001" | databricks-connect configure
+            condition: and(succeeded(), eq(variables['USE-DATABRICKS-CONNECT'], 'True'))
+            workingDirectory: $(WORKING_DIR)
+            displayName: 'Configure DBConnect'
+
+          - bash: |
+              source activate pysparkwheelexample
+              sh test.sh
+            displayName: "Running unit tests and coverage"
+            workingDirectory: $(WORKING_DIR)
+
+          - bash: |
+              source activate pysparkwheelexample
+              databricks clusters delete --cluster-id "$CLUSTER_ID"
+            condition: and(always(), eq(variables['USE-DATABRICKS-CONNECT'], 'True'))
+            workingDirectory: $(WORKING_DIR)
+            displayName: "Terminate the cluster"
+
+          - task: PublishTestResults@2
+            condition: succeededOrFailed()
+            displayName: "Publish Test Results"
+            inputs:
+              testResultsFiles: "**/test-*.xml"
+              testRunTitle: "Publish test results for Python $(python.version)"
+
+          - task: PublishCodeCoverageResults@1
+            displayName: "Publish Code Coverage Results"
+            inputs:
+              codeCoverageTool: Cobertura
+              summaryFileLocation: "$(System.DefaultWorkingDirectory)/**/coverage.xml"
+              reportDirectory: "$(System.DefaultWorkingDirectory)/**/htmlcov"
+
+  - stage: BuildPackage
+    displayName: Build Package
+    dependsOn: TestPackage
+    jobs:
+      - job: Build
+        continueOnError: false
+        steps:
+          - bash: echo "##vso[task.prependpath]$CONDA/bin"
+            displayName: Add conda to PATH
+            workingDirectory: $(WORKING_DIR)
+
+          - bash: |
+              ls -l
+              pwd
+              conda env create --quiet --file conda.yaml
+            displayName: Create Anaconda environment
+            workingDirectory: $(WORKING_DIR)
+
+          - task: PipAuthenticate@1
+            displayName: 'Pip Authenticate'
+            inputs:
+              artifactFeeds: $(ARTIFACT-FEED)
+              onlyAddExtraIndex: true
+
+          - bash: |
+              source activate pysparkwheelexample
+              sh build.sh
+            env:
+              package_version: $(LIB_VERSION).$(Build.BuildId)
+            workingDirectory: $(WORKING_DIR)
+            displayName: Build wheel artifact
+          - publish: $(WORKING_DIR)/dist
+            artifact: drop
+            displayName: Publish Build Artifact
+
+  - stage: PublishToAzDoArtifact
+    displayName: Publish To AzDO artifact
+    dependsOn: BuildPackage
+    variables:
+      - group: vg-build
+    jobs:
+      - job: Publish
+        pool:
+          vmImage: "Ubuntu-16.04"
+        continueOnError: false
+        steps:
+          - task: DownloadPipelineArtifact@2
+            inputs:
+              source: 'current' # Options: current, specific
+              artifact: drop
+              path: $(System.ArtifactsDirectory)
+          - task: UsePythonVersion@0
+            displayName: "Use Python 3.7"
+            inputs:
+              versionSpec: 3.7
+          - task: TwineAuthenticate@0
+            inputs:
+              artifactFeeds: $(ARTIFACT-FEED)
+          - script: |
+              python3.7 -m venv worker_venv
+              source worker_venv/bin/activate
+              pip install --upgrade pip
+              pip install twine
+              twine upload -r $(ARTIFACT-FEED) --config-file $(PYPIRC_PATH) $(System.ArtifactsDirectory)/pysparkwheelexample-$(LIB_VERSION).$(Build.BuildId)-py3-none-any.whl
+            workingDirectory: $(WORKING_DIR)
+            displayName: Uploading to Artifacts Feed
