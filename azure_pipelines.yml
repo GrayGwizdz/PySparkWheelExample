@@ -104,6 +104,14 @@ stages:
       - job: Build
         continueOnError: false
         steps:
+          - bash: echo "##vso[task.prependpath]$CONDA/bin"
+            displayName: Add conda to PATH
+            workingDirectory: $(WORKING_DIR)
+
+          - bash: |
+              conda env create --quiet --file conda.yaml
+            displayName: Create Anaconda environment
+
           - task: PipAuthenticate@1
             displayName: 'Pip Authenticate'
             inputs:
@@ -111,6 +119,7 @@ stages:
               onlyAddExtraIndex: true
 
           - bash: |
+              source activate pysparkwheelexample
               sh build.sh
             env:
               package_version: $(LIB_VERSION).$(Build.BuildId)
@@ -136,7 +145,7 @@ stages:
               source: 'current' # Options: current, specific
               artifact: drop
               path: $(System.ArtifactsDirectory)
-
+              
           - task: UsePythonVersion@0
             displayName: "Use Python 3.7"
             inputs:
