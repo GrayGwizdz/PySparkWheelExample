@@ -13,7 +13,7 @@ version = os.environ.get("package_version", "0.0.1")
 
 setup(
     name="pysparkwheelexample", # Replace with your own username
-    version="0.0.1",
+    version=version,
     author="Gray Gwizdz",
     author_email="gray@databricks.com",
     description="A small example package to demonstrate how to build a wheel for usage with Databricks.",
