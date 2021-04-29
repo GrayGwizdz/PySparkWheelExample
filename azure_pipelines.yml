@@ -145,7 +145,7 @@ stages:
               source: 'current' # Options: current, specific
               artifact: drop
               path: $(System.ArtifactsDirectory)
-              
+
           - task: UsePythonVersion@0
             displayName: "Use Python 3.7"
             inputs:
